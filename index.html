@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>Daily Brief</title>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--fg:#1c1c1e;--muted:#6b6b70;--line:#e3e3e0;--accent:#0a66d8;--ok:#1d8a4a;--warn:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1e1e21;--fg:#ececef;--muted:#9a9aa2;--line:#2e2e33;--accent:#5aa2ff;--ok:#4cc584;--warn:#ff7b72}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:760px;margin:0 auto;padding:0 14px 40px}
+header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.hrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:22px;margin:0;flex:1 1 auto}
+button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:9px 18px;background:var(--accent);color:#fff;cursor:pointer}
+button:disabled{opacity:.45;cursor:default}
+.status{font-size:13px;color:var(--muted);margin-top:4px;min-height:18px}
+.status.ok{color:var(--ok)} .status.err{color:var(--warn)}
+.banner{font-size:13px;color:var(--warn);margin-top:4px}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:22px 0 8px}
+ul{list-style:none;margin:0;padding:0;background:var(--card);border:1px solid var(--line);border-radius:10px}
+li{display:flex;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
+li:first-child{border-top:0}
+li input{width:20px;height:20px;margin-top:2px;flex:0 0 auto;accent-color:var(--accent);cursor:pointer}
+.num{color:var(--muted);font-weight:600;min-width:1.4em}
+.body{flex:1;min-width:0}
+.lbl{font-weight:700}
+.det{color:var(--muted);font-size:14.5px}
+.body a{color:var(--accent);font-size:14.5px;text-decoration:none}
+.body a:hover{text-decoration:underline}
+li.done .lbl,li.done .det{text-decoration:line-through;opacity:.55}
+li.done{opacity:.75}
+li.pending{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+textarea{width:100%;min-height:70px;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
+.empty{color:var(--muted);padding:12px 14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="hrow"><h1 id="title">Daily Brief</h1><button id="submit" disabled>Submit</button></div>
+  <div id="status" class="status">Loading...</div>
+  <div id="banner" class="banner" hidden></div>
+</header>
+<main id="main"></main>
+<h2>Note to Suzie (optional)</h2>
+<textarea id="note" placeholder="Anything Suzie should know"></textarea>
+</div>
+<script>
+(function(){
+const API="https://juyvkiovuwlpiuihyrqs.supabase.co/functions/v1/brief-checklist";
+const SECTIONS=[["needs","Needs you today",true],["followups","Today's follow-ups",false],["bills","Bills and alerts",false]];
+const h=new URLSearchParams(location.hash.slice(1));
+let token=h.get("t");
+if(token){try{localStorage.setItem("bc_token",token)}catch(e){}}else{try{token=localStorage.getItem("bc_token")}catch(e){}}
+const $=id=>document.getElementById(id);
+const st=$("status"),btn=$("submit"),note=$("note");
+let data=null,pending={};   // pending: id -> true (check) or false (uncheck)
+const KEY="bc_pending";
+function fmtDay(d){const [y,m,dd]=d.split("-").map(Number);return new Date(Date.UTC(y,m-1,dd,12)).toLocaleDateString("en-US",{timeZone:"UTC",weekday:"long",month:"short",day:"numeric"})}
+function fmtTime(iso){return new Date(iso).toLocaleTimeString("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"})}
+function fmtWhen(iso){return new Date(iso).toLocaleString("en-US",{timeZone:"America/Chicago",weekday:"short",hour:"numeric",minute:"2-digit"})}
+function setStatus(t,c){st.textContent=t;st.className="status"+(c?" "+c:"")}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({date:data&&data.date,pending,note:note.value}))}catch(e){}}
+function restore(date){try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.date===date){pending=s.pending||{};note.value=s.note||""}else{pending={};note.value="";localStorage.removeItem(KEY)}}catch(e){pending={}}}
+function dirty(){return Object.keys(pending).length>0||note.value.trim().length>0}
+function lastLine(){return data&&data.last_submitted_at?"Last submitted "+fmtWhen(data.last_submitted_at)+" CT":"Not submitted yet today"}
+function render(){
+  $("title").textContent="Daily Brief, "+fmtDay(data.date);
+  document.title="Daily Brief, "+fmtDay(data.date);
+  const bn=$("banner");
+  if(data.fallback){bn.hidden=false;bn.textContent="Today's brief isn't loaded yet. Showing "+fmtDay(data.date)+".";}else bn.hidden=true;
+  const main=$("main");main.innerHTML="";
+  const ids=new Set(data.items.map(i=>i.id));
+  for(const k of Object.keys(pending)) if(!ids.has(k)) delete pending[k];
+  for(const [sec,name,numbered] of SECTIONS){
+    const items=data.items.filter(i=>i.section===sec).sort((a,b)=>a.position-b.position);
+    const h2=document.createElement("h2");h2.textContent=name;main.appendChild(h2);
+    const ul=document.createElement("ul");
+    if(!items.length){const li=document.createElement("li");li.className="empty";li.textContent="Nothing here.";ul.appendChild(li)}
+    items.forEach((it,idx)=>{
+      const li=document.createElement("li");
+      const cb=document.createElement("input");cb.type="checkbox";cb.id="i_"+it.id;
+      const checked=(it.id in pending)?pending[it.id]:it.done;
+      cb.checked=checked;
+      if(it.done && !(it.id in pending)) li.classList.add("done");
+      if(it.id in pending) li.classList.add("pending");
+      cb.addEventListener("change",()=>{
+        if(cb.checked===it.done) delete pending[it.id]; else pending[it.id]=cb.checked;
+        save();render();
+      });
+      li.appendChild(cb);
+      if(numbered){const n=document.createElement("span");n.className="num";n.textContent=(idx+1)+".";li.appendChild(n)}
+      const body=document.createElement("label");body.className="body";body.htmlFor=cb.id;
+      const l=document.createElement("div");l.className="lbl";l.textContent=it.label;body.appendChild(l);
+      if(it.detail){const d=document.createElement("div");d.className="det";d.textContent=it.detail;body.appendChild(d)}
+      if(it.done&&it.done_at&&!(it.id in pending)){const d=document.createElement("div");d.className="det";d.textContent="Done "+fmtWhen(it.done_at)+" CT";body.appendChild(d)}
+      if(it.link && /^(https?:|tel:|mailto:)/i.test(it.link)){
+        const a=document.createElement("a");a.href=it.link;a.textContent=it.link_label||(/mail\.google\./.test(it.link)?"Open email":"Open link");
+        if(/^https?:/i.test(it.link)){a.target="_blank";a.rel="noopener noreferrer"}
+        a.addEventListener("click",e=>e.stopPropagation());
+        const p=document.createElement("div");p.appendChild(a);body.appendChild(p);
+      }
+      li.appendChild(body);ul.appendChild(li);
+    });
+    main.appendChild(ul);
+  }
+  btn.disabled=!dirty();
+}
+async function load(){
+  if(!token){setStatus("This link is missing its access key. Use the link Suzie sent.","err");return}
+  try{
+    const r=await fetch(API+"?_="+Date.now(),{headers:{"x-brief-token":token},cache:"no-store"});
+    if(r.status===401){setStatus("Access key not accepted. Use the link Suzie sent.","err");return}
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    data=await r.json();restore(data.date);render();setStatus(lastLine());
+  }catch(e){setStatus("Couldn't load the brief ("+e.message+"). Reload to try again.","err")}
+}
+btn.addEventListener("click",async()=>{
+  if(!data||!dirty())return;
+  btn.disabled=true;setStatus("Sending...");
+  const checked=Object.keys(pending).filter(k=>pending[k]),unchecked=Object.keys(pending).filter(k=>!pending[k]);
+  try{
+    const r=await fetch(API,{method:"POST",cache:"no-store",headers:{"x-brief-token":token,"content-type":"application/json"},
+      body:JSON.stringify({action:"submit",brief_date:data.date,checked_item_ids:checked,unchecked_item_ids:unchecked,note:note.value.trim()})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(j.error||("HTTP "+r.status));
+    pending={};note.value="";try{localStorage.removeItem(KEY)}catch(e){}
+    data={...data,items:j.items,last_submitted_at:j.last_submitted_at};
+    render();setStatus("Sent to Suzie at "+fmtTime(j.submission.submitted_at)+" CT","ok");
+  }catch(e){btn.disabled=false;setStatus("Didn't send ("+e.message+"). Your checks are saved, try again.","err")}
+});
+note.addEventListener("input",()=>{save();if(data)btn.disabled=!dirty()});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&data&&!dirty())load()});
+load();
+})();
+</script>
+</body>
+</html>
