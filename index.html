@@ -18,10 +18,18 @@ header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;
 h1{font-size:22px;margin:0;flex:1 1 auto}
 button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:9px 18px;background:var(--accent);color:#fff;cursor:pointer}
 button:disabled{opacity:.45;cursor:default}
-.status{font-size:13px;color:var(--muted);margin-top:4px;min-height:18px}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);padding:8px 14px}
+.tabs{display:flex;gap:6px;margin-top:8px}
+.tabs a{font-size:14px;font-weight:600;color:var(--muted);text-decoration:none;padding:5px 12px;border-radius:999px;border:1px solid var(--line)}
+.tabs a.on{color:#fff;background:var(--accent);border-color:var(--accent)}
+.status{font-size:13px;color:var(--muted);margin-top:6px;min-height:18px}
 .status.ok{color:var(--ok)} .status.err{color:var(--warn)}
 .banner{font-size:13px;color:var(--warn);margin-top:4px}
+.refresh{display:flex;align-items:center;gap:10px;margin-top:10px;padding:10px 12px;border-radius:10px;background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--fg);font-size:14px}
+.spin{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--ok);border-radius:50%;animation:sp 1s linear infinite;flex:0 0 auto}
+@keyframes sp{to{transform:rotate(360deg)}}
 h2{font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:22px 0 8px}
+h2 .cnt{font-weight:600;letter-spacing:0;text-transform:none}
 ul{list-style:none;margin:0;padding:0;background:var(--card);border:1px solid var(--line);border-radius:10px}
 li{display:flex;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}
 li:first-child{border-top:0}
@@ -32,44 +40,103 @@ li input{width:20px;height:20px;margin-top:2px;flex:0 0 auto;accent-color:var(--
 .det{color:var(--muted);font-size:14.5px}
 .body a{color:var(--accent);font-size:14.5px;text-decoration:none}
 .body a:hover{text-decoration:underline}
-li.done .lbl,li.done .det{text-decoration:line-through;opacity:.55}
-li.done{opacity:.75}
 li.pending{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+li.new{animation:fl 2.5s ease-out}
+@keyframes fl{from{background:color-mix(in srgb,var(--ok) 22%,transparent)}to{background:transparent}}
+details.donebox{margin-top:22px}
+details.donebox summary{cursor:pointer;font-size:15px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700;margin-bottom:8px}
+details.donebox li .lbl{opacity:.7}
 textarea{width:100%;min-height:70px;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
 .empty{color:var(--muted);padding:12px 14px}
+/* history */
+.cal{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px}
+.calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.calhead b{font-size:17px}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.dow{font-size:12px;color:var(--muted);text-align:center;font-weight:600;padding-bottom:2px}
+.day{aspect-ratio:1/1;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:14px;color:var(--muted);border:1px solid transparent;min-height:38px;padding:0}
+.day.blank{visibility:hidden}
+.day.today{border-color:var(--line);color:var(--fg)}
+button.day.has{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--fg);font-weight:700;cursor:pointer;border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+button.day.has:hover{background:color-mix(in srgb,var(--ok) 30%,transparent)}
+button.day.sel{background:var(--ok);color:#fff;border-color:var(--ok)}
+.day .c{font-size:11px;font-weight:600;line-height:1}
+.legend{font-size:13px;color:var(--muted);margin-top:8px}
+.sec{display:inline-block;font-size:12px;font-weight:600;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 8px;margin-left:6px;vertical-align:1px}
+.notebox{margin-top:10px;padding:10px 12px;border-left:3px solid var(--accent);background:var(--card);border-radius:6px;font-size:14.5px;white-space:pre-wrap}
+@media (max-width:480px){h1{font-size:19px}.day{min-height:34px;font-size:13px}}
 </style>
 </head>
 <body>
 <div class="wrap">
 <header>
   <div class="hrow"><h1 id="title">Daily Brief</h1><button id="submit" disabled>Submit</button></div>
+  <nav class="tabs"><a id="tabToday" href="#">Today</a><a id="tabHist" href="#">History</a></nav>
   <div id="status" class="status">Loading...</div>
   <div id="banner" class="banner" hidden></div>
+  <div id="refresh" class="refresh" hidden><span class="spin"></span><span id="refreshText">Got it. Suzie is refreshing your list...</span></div>
 </header>
+<section id="todayView">
 <main id="main"></main>
+<div id="doneWrap"></div>
 <h2>Note to Suzie (optional)</h2>
 <textarea id="note" placeholder="Anything Suzie should know"></textarea>
+</section>
+<section id="histView" hidden>
+  <div class="cal">
+    <div class="calhead"><button class="ghost" id="prevM" aria-label="Previous month">&#8249;</button><b id="mLabel"></b><button class="ghost" id="nextM" aria-label="Next month">&#8250;</button></div>
+    <div class="grid" id="grid"></div>
+    <div class="legend">Highlighted days have finished items. Tap one to see the full list.</div>
+  </div>
+  <div id="dayDetail"></div>
+</section>
 </div>
 <script>
 (function(){
 const API="https://juyvkiovuwlpiuihyrqs.supabase.co/functions/v1/brief-checklist";
 const SECTIONS=[["needs","Needs you today",true],["followups","Today's follow-ups",false],["bills","Bills and alerts",false]];
+const SECNAME={needs:"Needs you",followups:"Follow-up",bills:"Bills"};
 const h=new URLSearchParams(location.hash.slice(1));
 let token=h.get("t");
 if(token){try{localStorage.setItem("bc_token",token)}catch(e){}}else{try{token=localStorage.getItem("bc_token")}catch(e){}}
 const $=id=>document.getElementById(id);
 const st=$("status"),btn=$("submit"),note=$("note");
-let data=null,pending={};   // pending: id -> true (check) or false (uncheck)
+let data=null,pending={},seenIds=null;
 const KEY="bc_pending";
 function fmtDay(d){const [y,m,dd]=d.split("-").map(Number);const t=new Date(Date.UTC(y,m-1,dd,12)),o={timeZone:"UTC"};return t.toLocaleDateString("en-US",{...o,weekday:"long"})+" "+t.toLocaleDateString("en-US",{...o,month:"short"})+" "+dd}
 function fmtTime(iso){return new Date(iso).toLocaleTimeString("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"})}
 function fmtWhen(iso){return new Date(iso).toLocaleString("en-US",{timeZone:"America/Chicago",weekday:"short",hour:"numeric",minute:"2-digit"})}
+function chiToday(){return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function setStatus(t,c){st.textContent=t;st.className="status"+(c?" "+c:"")}
 function save(){try{localStorage.setItem(KEY,JSON.stringify({date:data&&data.date,pending,note:note.value}))}catch(e){}}
 function restore(date){try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.date===date){pending=s.pending||{};note.value=s.note||""}else{pending={};note.value="";localStorage.removeItem(KEY)}}catch(e){pending={}}}
 function dirty(){return Object.keys(pending).length>0||note.value.trim().length>0}
 function lastLine(){return data&&data.last_submitted_at?"Last submitted "+fmtWhen(data.last_submitted_at)+" CT":"Not submitted yet today"}
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+function linkEl(it){
+  if(!(it.link&&/^(https?:|tel:|mailto:)/i.test(it.link)))return null;
+  const a=el("a",null,it.link_label||(/mail\.google\./.test(it.link)?"Open email":"Open link"));a.href=it.link;
+  if(/^https?:/i.test(it.link)){a.target="_blank";a.rel="noopener noreferrer"}
+  a.addEventListener("click",e=>e.stopPropagation());
+  const p=el("div");p.appendChild(a);return p;
+}
+/* ---------- view routing (token stays in the hash) ---------- */
+function view(){return new URLSearchParams(location.hash.slice(1)).get("v")==="history"?"history":"today"}
+function hashFor(v){const p=new URLSearchParams();if(token)p.set("t",token);if(v==="history")p.set("v","history");return "#"+p.toString()}
+$("tabToday").href=hashFor("today");$("tabHist").href=hashFor("history");
+function applyView(){
+  const v=view();
+  $("todayView").hidden=v!=="today";$("histView").hidden=v!=="history";
+  $("tabToday").classList.toggle("on",v==="today");$("tabHist").classList.toggle("on",v==="history");
+  btn.hidden=v!=="today";
+  if(v==="history"){$("title").textContent="History";document.title="Daily Brief, History";$("banner").hidden=true;$("refresh").hidden=true;loadHistory()}
+  else if(data){render();setStatus(lastLine());if(refreshing)$("refresh").hidden=false}
+  else load();
+}
+window.addEventListener("hashchange",applyView);
+/* ---------- today ---------- */
 function render(){
+  if(view()!=="today")return;
   $("title").textContent="Daily Brief, "+fmtDay(data.date);
   document.title="Daily Brief, "+fmtDay(data.date);
   const bn=$("banner");
@@ -78,48 +145,88 @@ function render(){
   const ids=new Set(data.items.map(i=>i.id));
   for(const k of Object.keys(pending)) if(!ids.has(k)) delete pending[k];
   for(const [sec,name,numbered] of SECTIONS){
-    const items=data.items.filter(i=>i.section===sec).sort((a,b)=>a.position-b.position);
-    const h2=document.createElement("h2");h2.textContent=name;main.appendChild(h2);
-    const ul=document.createElement("ul");
-    if(!items.length){const li=document.createElement("li");li.className="empty";li.textContent="Nothing here.";ul.appendChild(li)}
+    const items=data.items.filter(i=>i.section===sec&&!i.done).sort((a,b)=>a.position-b.position);
+    const h2=el("h2",null,name+" ");h2.appendChild(el("span","cnt","("+items.length+")"));main.appendChild(h2);
+    const ul=el("ul");
+    if(!items.length){ul.appendChild(el("li","empty","All clear here."))}
     items.forEach((it,idx)=>{
-      const li=document.createElement("li");
-      const cb=document.createElement("input");cb.type="checkbox";cb.id="i_"+it.id;
-      const checked=(it.id in pending)?pending[it.id]:it.done;
-      cb.checked=checked;
-      if(it.done && !(it.id in pending)) li.classList.add("done");
-      if(it.id in pending) li.classList.add("pending");
-      cb.addEventListener("change",()=>{
-        if(cb.checked===it.done) delete pending[it.id]; else pending[it.id]=cb.checked;
-        save();render();
-      });
+      const li=el("li");
+      const cb=el("input");cb.type="checkbox";cb.id="i_"+it.id;cb.checked=!!pending[it.id];
+      if(pending[it.id])li.classList.add("pending");
+      if(seenIds&&!seenIds.has(it.id))li.classList.add("new");
+      cb.addEventListener("change",()=>{if(cb.checked)pending[it.id]=true;else delete pending[it.id];save();li.classList.toggle("pending",cb.checked);btn.disabled=!dirty()});
       li.appendChild(cb);
-      if(numbered){const n=document.createElement("span");n.className="num";n.textContent=(idx+1)+".";li.appendChild(n)}
-      const body=document.createElement("label");body.className="body";body.htmlFor=cb.id;
-      const l=document.createElement("div");l.className="lbl";l.textContent=it.label;body.appendChild(l);
-      if(it.detail){const d=document.createElement("div");d.className="det";d.textContent=it.detail;body.appendChild(d)}
-      if(it.done&&it.done_at&&!(it.id in pending)){const d=document.createElement("div");d.className="det";d.textContent="Done "+fmtWhen(it.done_at)+" CT";body.appendChild(d)}
-      if(it.link && /^(https?:|tel:|mailto:)/i.test(it.link)){
-        const a=document.createElement("a");a.href=it.link;a.textContent=it.link_label||(/mail\.google\./.test(it.link)?"Open email":"Open link");
-        if(/^https?:/i.test(it.link)){a.target="_blank";a.rel="noopener noreferrer"}
-        a.addEventListener("click",e=>e.stopPropagation());
-        const p=document.createElement("div");p.appendChild(a);body.appendChild(p);
-      }
+      if(numbered)li.appendChild(el("span","num",(idx+1)+"."));
+      const body=el("label","body");body.htmlFor=cb.id;
+      body.appendChild(el("div","lbl",it.label));
+      if(it.detail)body.appendChild(el("div","det",it.detail));
+      const l=linkEl(it);if(l)body.appendChild(l);
       li.appendChild(body);ul.appendChild(li);
     });
     main.appendChild(ul);
   }
+  // Done today (collapsed). Unticking one here sends it back to open on Submit.
+  const done=data.items.filter(i=>i.done).sort((a,b)=>(a.done_at||"").localeCompare(b.done_at||""));
+  const dw=$("doneWrap");dw.innerHTML="";
+  if(done.length){
+    const d=el("details","donebox");const s=el("summary",null,"Done today ("+done.length+")");d.appendChild(s);
+    const ul=el("ul");
+    for(const it of done){
+      const li=el("li");const cb=el("input");cb.type="checkbox";cb.id="d_"+it.id;cb.checked=!(it.id in pending);
+      if(it.id in pending)li.classList.add("pending");
+      cb.addEventListener("change",()=>{if(!cb.checked)pending[it.id]=false;else delete pending[it.id];save();li.classList.toggle("pending",!cb.checked);btn.disabled=!dirty()});
+      li.appendChild(cb);
+      const body=el("label","body");body.htmlFor=cb.id;body.appendChild(el("div","lbl",it.label));
+      body.appendChild(el("div","det",(it.id in pending?"Will reopen on Submit":"Done "+(it.done_at?fmtWhen(it.done_at)+" CT":""))));
+      li.appendChild(body);ul.appendChild(li);
+    }
+    d.appendChild(ul);
+    if(Object.values(pending).some(v=>v===false))d.open=true;
+    dw.appendChild(d);
+  }
+  seenIds=new Set(data.items.map(i=>i.id));
   btn.disabled=!dirty();
+}
+async function fetchToday(){
+  const r=await fetch(API+"?_="+Date.now(),{headers:{"x-brief-token":token},cache:"no-store"});
+  if(r.status===401){const e=new Error("unauthorized");e.auth=true;throw e}
+  if(!r.ok) throw new Error("HTTP "+r.status);
+  return r.json();
 }
 async function load(){
   if(!token){setStatus("This link is missing its access key. Use the link Suzie sent.","err");return}
   try{
-    const r=await fetch(API+"?_="+Date.now(),{headers:{"x-brief-token":token},cache:"no-store"});
-    if(r.status===401){setStatus("Access key not accepted. Use the link Suzie sent.","err");return}
-    if(!r.ok) throw new Error("HTTP "+r.status);
-    data=await r.json();restore(data.date);render();setStatus(lastLine());
-  }catch(e){setStatus("Couldn't load the brief ("+e.message+"). Reload to try again.","err")}
+    const j=await fetchToday();
+    const changed=!data||data.date!==j.date;
+    if(changed)seenIds=null;
+    data=j;restore(data.date);render();if(!refreshing)setStatus(lastLine());
+  }catch(e){setStatus(e.auth?"Access key not accepted. Use the link Suzie sent.":"Couldn't load the brief ("+e.message+"). Reload to try again.","err")}
 }
+/* ---------- after submit: wait for Suzie's fresh set ---------- */
+let refreshing=false,pollTimer=null,pollUntil=0,baseVersion=null;
+const FAST=30000,WINDOW=15*60000;
+function stopRefresh(msg,cls){refreshing=false;clearTimeout(pollTimer);$("refresh").hidden=true;if(msg)setStatus(msg,cls)}
+async function pollOnce(){
+  if(!refreshing)return;
+  try{
+    const j=await fetchToday();
+    if(j.version!==baseVersion||j.date!==data.date){
+      if(j.date!==data.date)seenIds=null;
+      data=j;if(!dirty())restore(data.date);render();
+      stopRefresh("Fresh list loaded at "+fmtTime(new Date().toISOString())+" CT","ok");return;
+    }
+  }catch(e){}
+  if(Date.now()>pollUntil){stopRefresh("Sent. Suzie hasn't posted a new set yet. It will show here on its own, or reload any time.","ok");startIdle();return}
+  pollTimer=setTimeout(pollOnce,FAST);
+}
+function startRefresh(){
+  refreshing=true;baseVersion=data.version;pollUntil=Date.now()+WINDOW;
+  $("refreshText").textContent="Got it. Suzie is refreshing your list with a new set...";$("refresh").hidden=false;
+  clearTimeout(pollTimer);pollTimer=setTimeout(pollOnce,FAST);
+}
+// Gentle background check every 2 minutes while visible and nothing is pending.
+let idleTimer=null;
+function startIdle(){clearInterval(idleTimer);idleTimer=setInterval(()=>{if(document.visibilityState==="visible"&&!refreshing&&!dirty()&&view()==="today")load()},120000)}
 btn.addEventListener("click",async()=>{
   if(!data||!dirty())return;
   btn.disabled=true;setStatus("Sending...");
@@ -130,13 +237,79 @@ btn.addEventListener("click",async()=>{
     const j=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error||("HTTP "+r.status));
     pending={};note.value="";try{localStorage.removeItem(KEY)}catch(e){}
-    data={...data,items:j.items,last_submitted_at:j.last_submitted_at};
+    data={...data,items:j.items,last_submitted_at:j.last_submitted_at,version:j.version,batch:j.batch};
     render();setStatus("Sent to Suzie at "+fmtTime(j.submission.submitted_at)+" CT","ok");
-  }catch(e){btn.disabled=false;setStatus("Didn't send ("+e.message+"). Your checks are saved, try again.","err")}
+    startRefresh();
+  }catch(e){btn.disabled=!dirty();setStatus("Didn't send ("+e.message+"). Your checks are saved, try again.","err")}
 });
 note.addEventListener("input",()=>{save();if(data)btn.disabled=!dirty()});
-document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&data&&!dirty())load()});
-load();
+function onFocus(){if(document.visibilityState!=="visible")return;if(view()==="history"){loadHistory();return}if(refreshing){clearTimeout(pollTimer);pollOnce()}else if(data&&!dirty())load()}
+document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);
+/* ---------- history ---------- */
+let hist=null,hMonth=null,selDay=null,histAt=0;
+async function loadHistory(force){
+  if(!token){setStatus("This link is missing its access key. Use the link Suzie sent.","err");return}
+  if(hist&&!force&&Date.now()-histAt<20000){renderCal();return}
+  setStatus("Loading history...");
+  try{
+    const r=await fetch(API,{method:"POST",cache:"no-store",headers:{"x-brief-token":token,"content-type":"application/json"},body:JSON.stringify({action:"history"})});
+    if(r.status===401){setStatus("Access key not accepted. Use the link Suzie sent.","err");return}
+    const j=await r.json();if(!r.ok)throw new Error(j.error||("HTTP "+r.status));
+    hist=j;histAt=Date.now();
+    if(!hMonth){hMonth=j.today.slice(0,7)}
+    const days=Object.keys(j.days).length;
+    setStatus(days?days+" day"+(days>1?"s":"")+" with finished items":"Nothing finished yet. Days light up here once you submit.");
+    renderCal();
+  }catch(e){setStatus("Couldn't load history ("+e.message+").","err")}
+}
+function renderCal(){
+  const [y,m]=hMonth.split("-").map(Number);
+  const first=new Date(Date.UTC(y,m-1,1)),dim=new Date(Date.UTC(y,m,0)).getUTCDate(),start=first.getUTCDay();
+  $("mLabel").textContent=first.toLocaleDateString("en-US",{timeZone:"UTC",month:"long",year:"numeric"});
+  const g=$("grid");g.innerHTML="";
+  for(const d of ["S","M","T","W","T","F","S"])g.appendChild(el("div","dow",d));
+  for(let i=0;i<start;i++)g.appendChild(el("div","day blank"));
+  const today=hist.today;
+  for(let d=1;d<=dim;d++){
+    const ds=hMonth+"-"+String(d).padStart(2,"0");
+    const items=hist.days[ds]||[];
+    let c;
+    if(items.length){
+      c=el("button","day has");c.type="button";c.title=items.length+" done";
+      c.appendChild(el("span",null,String(d)));c.appendChild(el("span","c",items.length+" done"));
+      if(ds===selDay)c.classList.add("sel");
+      c.addEventListener("click",()=>{selDay=ds;renderCal();showDay(ds)});
+    }else{c=el("div","day",String(d))}
+    if(ds===today)c.classList.add("today");
+    g.appendChild(c);
+  }
+  // nav: allow back to the first month with history, forward to the current month
+  const months=Object.keys(hist.days).map(x=>x.slice(0,7)).concat([today.slice(0,7)]).sort();
+  $("prevM").disabled=hMonth<=months[0];$("nextM").disabled=hMonth>=today.slice(0,7);
+  if(selDay&&selDay.slice(0,7)===hMonth)showDay(selDay);else $("dayDetail").innerHTML="";
+}
+function shiftMonth(n){let [y,m]=hMonth.split("-").map(Number);m+=n;if(m<1){m=12;y--}if(m>12){m=1;y++}hMonth=y+"-"+String(m).padStart(2,"0");renderCal()}
+$("prevM").addEventListener("click",()=>shiftMonth(-1));$("nextM").addEventListener("click",()=>shiftMonth(1));
+function showDay(ds){
+  const box=$("dayDetail");box.innerHTML="";
+  const items=(hist.days[ds]||[]).slice();
+  const h2=el("h2",null,fmtDay(ds)+" ");h2.appendChild(el("span","cnt","("+items.length+" done)"));box.appendChild(h2);
+  const ul=el("ul");
+  for(const it of items){
+    const li=el("li");const body=el("div","body");
+    const l=el("div","lbl",it.label);l.appendChild(el("span","sec",SECNAME[it.section]||it.section));body.appendChild(l);
+    if(it.detail)body.appendChild(el("div","det",it.detail));
+    body.appendChild(el("div","det","Checked off "+fmtTime(it.done_at)+" CT"+(it.brief_date!==ds?" (from the "+fmtDay(it.brief_date)+" list)":"")));
+    li.appendChild(body);ul.appendChild(li);
+  }
+  box.appendChild(ul);
+  const notes=new Map();
+  for(const it of items)if(it.note&&it.submission_id)notes.set(it.submission_id,{at:it.done_at,note:it.note});
+  for(const n of (hist.notes&&hist.notes[ds])||[]){if(![...notes.values()].some(x=>x.note===n.note))notes.set("n"+n.submitted_at,{at:n.submitted_at,note:n.note})}
+  if(notes.size){box.appendChild(el("h2",null,"Notes you sent"));for(const n of notes.values())box.appendChild(el("div","notebox",fmtTime(n.at)+" CT: "+n.note))}
+}
+startIdle();
+applyView();
 })();
 </script>
 </body>
