@@ -48,6 +48,7 @@ details.donebox summary{cursor:pointer;font-size:15px;text-transform:uppercase;l
 details.donebox li .lbl{opacity:.7}
 textarea{width:100%;min-height:70px;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg)}
 .empty{color:var(--muted);padding:12px 14px}
+.det.ck{color:var(--accent);font-weight:600;font-size:13px}
 /* history */
 .cal{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:12px}
 .calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
@@ -101,17 +102,35 @@ let token=h.get("t");
 if(token){try{localStorage.setItem("bc_token",token)}catch(e){}}else{try{token=localStorage.getItem("bc_token")}catch(e){}}
 const $=id=>document.getElementById(id);
 const st=$("status"),btn=$("submit"),note=$("note");
-let data=null,pending={},seenIds=null;
+let data=null,pending={},seenIds=null;   // pending: id -> false only (reopen a done item on Submit)
+let unsynced={};                            // itemKey -> bool, ticks not yet confirmed by the server
+const KEY2="bc_ticks";
 const KEY="bc_pending";
 function fmtDay(d){const [y,m,dd]=d.split("-").map(Number);const t=new Date(Date.UTC(y,m-1,dd,12)),o={timeZone:"UTC"};return t.toLocaleDateString("en-US",{...o,weekday:"long"})+" "+t.toLocaleDateString("en-US",{...o,month:"short"})+" "+dd}
 function fmtTime(iso){return new Date(iso).toLocaleTimeString("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"})}
 function fmtWhen(iso){return new Date(iso).toLocaleString("en-US",{timeZone:"America/Chicago",weekday:"short",hour:"numeric",minute:"2-digit"})}
 function chiToday(){return new Intl.DateTimeFormat("en-CA",{timeZone:"America/Chicago",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date())}
 function setStatus(t,c){st.textContent=t;st.className="status"+(c?" "+c:"")}
-function save(){try{localStorage.setItem(KEY,JSON.stringify({date:data&&data.date,pending,note:note.value}))}catch(e){}}
-function restore(date){try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.date===date){pending=s.pending||{};note.value=s.note||""}else{pending={};note.value="";localStorage.removeItem(KEY)}}catch(e){pending={}}}
-function dirty(){return Object.keys(pending).length>0||note.value.trim().length>0}
-function lastLine(){return data&&data.last_submitted_at?"Last submitted "+fmtWhen(data.last_submitted_at)+" CT":"Not submitted yet today"}
+function save(){try{localStorage.setItem(KEY,JSON.stringify({date:data&&data.date,pending,note:note.value}));localStorage.setItem(KEY2,JSON.stringify({date:data&&data.date,unsynced}))}catch(e){}}
+function restore(date){try{const s=JSON.parse(localStorage.getItem(KEY)||"null");if(s&&s.date===date){pending=s.pending||{};note.value=s.note||""}else{pending={};note.value="";localStorage.removeItem(KEY)}
+  const u=JSON.parse(localStorage.getItem(KEY2)||"null");unsynced=(u&&u.date===date)?(u.unsynced||{}):{};}catch(e){pending={};unsynced={}}}
+function ikey(it){return it.item_key?"k:"+it.item_key.toLowerCase():"l:"+String(it.label).trim().toLowerCase()}
+function ticked(it){const k=ikey(it);return (k in unsynced)?unsynced[k]:!!it.pending_check}
+function tickedIds(){return data?data.items.filter(i=>!i.done&&ticked(i)).map(i=>i.id):[]}
+function dirty(){return tickedIds().length>0||Object.keys(pending).length>0||note.value.trim().length>0}
+// Autosave a tick/untick to the server right away; localStorage keeps it if the network fails.
+async function syncTick(it,on){
+  const k=ikey(it);unsynced[k]=on;save();
+  try{
+    const r=await fetch(API,{method:"POST",cache:"no-store",headers:{"x-brief-token":token,"content-type":"application/json"},body:JSON.stringify({action:"set_pending",ids:[it.id],checked:on})});
+    if(!r.ok)throw new Error("HTTP "+r.status);
+    it.pending_check=on;if(unsynced[k]===on)delete unsynced[k];save();
+  }catch(e){setStatus("Check saved on this device; will sync when the connection is back.","err")}
+}
+// After any reload/refresh, push local ticks that the server doesn't have yet (matched by item key or label).
+function resync(){if(!data)return;for(const it of data.items){if(it.done)continue;const k=ikey(it);if((k in unsynced)&&unsynced[k]!==!!it.pending_check)syncTick(it,unsynced[k]);else if(k in unsynced)delete unsynced[k]}save()}
+function lastLine(){const n=tickedIds().length;return (data&&data.last_submitted_at?"Last submitted "+fmtWhen(data.last_submitted_at)+" CT":"Not submitted yet today")+(n?" · "+n+" checked, not submitted yet":"")}
+function countLine(){if(!refreshing)setStatus(lastLine())}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
 function linkEl(it){
   if(!(it.link&&/^(https?:|tel:|mailto:)/i.test(it.link)))return null;
@@ -143,7 +162,7 @@ function render(){
   if(data.fallback){bn.hidden=false;bn.textContent="Today's brief isn't loaded yet. Showing "+fmtDay(data.date)+".";}else bn.hidden=true;
   const main=$("main");main.innerHTML="";
   const ids=new Set(data.items.map(i=>i.id));
-  for(const k of Object.keys(pending)) if(!ids.has(k)) delete pending[k];
+  for(const k of Object.keys(pending)) if(!ids.has(k)||pending[k]!==false) delete pending[k];
   for(const [sec,name,numbered] of SECTIONS){
     const items=data.items.filter(i=>i.section===sec&&!i.done).sort((a,b)=>a.position-b.position);
     const h2=el("h2",null,name+" ");h2.appendChild(el("span","cnt","("+items.length+")"));main.appendChild(h2);
@@ -151,16 +170,18 @@ function render(){
     if(!items.length){ul.appendChild(el("li","empty","All clear here."))}
     items.forEach((it,idx)=>{
       const li=el("li");
-      const cb=el("input");cb.type="checkbox";cb.id="i_"+it.id;cb.checked=!!pending[it.id];
-      if(pending[it.id])li.classList.add("pending");
+      const on=ticked(it);
+      const cb=el("input");cb.type="checkbox";cb.id="i_"+it.id;cb.checked=on;
+      if(on)li.classList.add("pending");
       if(seenIds&&!seenIds.has(it.id))li.classList.add("new");
-      cb.addEventListener("change",()=>{if(cb.checked)pending[it.id]=true;else delete pending[it.id];save();li.classList.toggle("pending",cb.checked);btn.disabled=!dirty()});
+      cb.addEventListener("change",()=>{li.classList.toggle("pending",cb.checked);syncTick(it,cb.checked);hint.hidden=!cb.checked;btn.disabled=!dirty();countLine()});
       li.appendChild(cb);
       if(numbered)li.appendChild(el("span","num",(idx+1)+"."));
       const body=el("label","body");body.htmlFor=cb.id;
       body.appendChild(el("div","lbl",it.label));
       if(it.detail)body.appendChild(el("div","det",it.detail));
       const l=linkEl(it);if(l)body.appendChild(l);
+      const hint=el("div","det ck","Checked, not submitted yet (saved)");hint.hidden=!on;body.appendChild(hint);
       li.appendChild(body);ul.appendChild(li);
     });
     main.appendChild(ul);
@@ -199,7 +220,7 @@ async function load(){
     const j=await fetchToday();
     const changed=!data||data.date!==j.date;
     if(changed)seenIds=null;
-    data=j;restore(data.date);render();if(!refreshing)setStatus(lastLine());
+    data=j;if(changed)restore(data.date);resync();render();if(!refreshing)setStatus(lastLine());
   }catch(e){setStatus(e.auth?"Access key not accepted. Use the link Suzie sent.":"Couldn't load the brief ("+e.message+"). Reload to try again.","err")}
 }
 /* ---------- after submit: wait for Suzie's fresh set ---------- */
@@ -212,7 +233,7 @@ async function pollOnce(){
     const j=await fetchToday();
     if(j.version!==baseVersion||j.date!==data.date){
       if(j.date!==data.date)seenIds=null;
-      data=j;if(!dirty())restore(data.date);render();
+      data=j;restore(data.date);resync();render();
       stopRefresh("Fresh list loaded at "+fmtTime(new Date().toISOString())+" CT","ok");return;
     }
   }catch(e){}
@@ -226,24 +247,24 @@ function startRefresh(){
 }
 // Gentle background check every 2 minutes while visible and nothing is pending.
 let idleTimer=null;
-function startIdle(){clearInterval(idleTimer);idleTimer=setInterval(()=>{if(document.visibilityState==="visible"&&!refreshing&&!dirty()&&view()==="today")load()},120000)}
+function startIdle(){clearInterval(idleTimer);idleTimer=setInterval(()=>{if(document.visibilityState==="visible"&&!refreshing&&view()==="today")load()},120000)}
 btn.addEventListener("click",async()=>{
   if(!data||!dirty())return;
   btn.disabled=true;setStatus("Sending...");
-  const checked=Object.keys(pending).filter(k=>pending[k]),unchecked=Object.keys(pending).filter(k=>!pending[k]);
+  const checked=tickedIds(),unchecked=Object.keys(pending).filter(k=>pending[k]===false);
   try{
     const r=await fetch(API,{method:"POST",cache:"no-store",headers:{"x-brief-token":token,"content-type":"application/json"},
       body:JSON.stringify({action:"submit",brief_date:data.date,checked_item_ids:checked,unchecked_item_ids:unchecked,note:note.value.trim()})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error||("HTTP "+r.status));
-    pending={};note.value="";try{localStorage.removeItem(KEY)}catch(e){}
+    pending={};unsynced={};note.value="";try{localStorage.removeItem(KEY);localStorage.removeItem(KEY2)}catch(e){}
     data={...data,items:j.items,last_submitted_at:j.last_submitted_at,version:j.version,batch:j.batch};
     render();setStatus("Sent to Suzie at "+fmtTime(j.submission.submitted_at)+" CT","ok");
     startRefresh();
   }catch(e){btn.disabled=!dirty();setStatus("Didn't send ("+e.message+"). Your checks are saved, try again.","err")}
 });
 note.addEventListener("input",()=>{save();if(data)btn.disabled=!dirty()});
-function onFocus(){if(document.visibilityState!=="visible")return;if(view()==="history"){loadHistory();return}if(refreshing){clearTimeout(pollTimer);pollOnce()}else if(data&&!dirty())load()}
+function onFocus(){if(document.visibilityState!=="visible")return;if(view()==="history"){loadHistory();return}if(refreshing){clearTimeout(pollTimer);pollOnce()}else if(data)load()}
 document.addEventListener("visibilitychange",onFocus);window.addEventListener("focus",onFocus);
 /* ---------- history ---------- */
 let hist=null,hMonth=null,selDay=null,histAt=0;
