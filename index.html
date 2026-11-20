@@ -61,7 +61,7 @@ const $=id=>document.getElementById(id);
 const st=$("status"),btn=$("submit"),note=$("note");
 let data=null,pending={};   // pending: id -> true (check) or false (uncheck)
 const KEY="bc_pending";
-function fmtDay(d){const [y,m,dd]=d.split("-").map(Number);return new Date(Date.UTC(y,m-1,dd,12)).toLocaleDateString("en-US",{timeZone:"UTC",weekday:"long",month:"short",day:"numeric"})}
+function fmtDay(d){const [y,m,dd]=d.split("-").map(Number);const t=new Date(Date.UTC(y,m-1,dd,12)),o={timeZone:"UTC"};return t.toLocaleDateString("en-US",{...o,weekday:"long"})+" "+t.toLocaleDateString("en-US",{...o,month:"short"})+" "+dd}
 function fmtTime(iso){return new Date(iso).toLocaleTimeString("en-US",{timeZone:"America/Chicago",hour:"numeric",minute:"2-digit"})}
 function fmtWhen(iso){return new Date(iso).toLocaleString("en-US",{timeZone:"America/Chicago",weekday:"short",hour:"numeric",minute:"2-digit"})}
 function setStatus(t,c){st.textContent=t;st.className="status"+(c?" "+c:"")}
