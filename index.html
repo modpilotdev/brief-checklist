@@ -11,6 +11,7 @@
 :root{--bg:#f7f7f5;--card:#fff;--fg:#1c1c1e;--muted:#6b6b70;--line:#e3e3e0;--accent:#0a66d8;--ok:#1d8a4a;--warn:#b3261e}
 @media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1e1e21;--fg:#ececef;--muted:#9a9aa2;--line:#2e2e33;--accent:#5aa2ff;--ok:#4cc584;--warn:#ff7b72}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .wrap{max-width:760px;margin:0 auto;padding:0 14px 40px}
 header{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;border-bottom:1px solid var(--line);margin-bottom:8px}
@@ -220,12 +221,15 @@ async function load(){
     const j=await fetchToday();
     const changed=!data||data.date!==j.date;
     if(changed)seenIds=null;
-    data=j;if(changed)restore(data.date);resync();render();if(!refreshing)setStatus(lastLine());
+    const newSet=refreshing&&(j.version!==baseVersion||changed);
+    data=j;if(changed)restore(data.date);resync();render();
+    if(newSet)stopRefresh("Fresh list loaded at "+fmtTime(new Date().toISOString())+" CT","ok");
+    else if(!refreshing)setStatus(lastLine());
   }catch(e){setStatus(e.auth?"Access key not accepted. Use the link Suzie sent.":"Couldn't load the brief ("+e.message+"). Reload to try again.","err")}
 }
 /* ---------- after submit: wait for Suzie's fresh set ---------- */
 let refreshing=false,pollTimer=null,pollUntil=0,baseVersion=null;
-const FAST=30000,WINDOW=15*60000;
+const FAST=30000,WINDOW=10*60000;
 function stopRefresh(msg,cls){refreshing=false;clearTimeout(pollTimer);$("refresh").hidden=true;if(msg)setStatus(msg,cls)}
 async function pollOnce(){
   if(!refreshing)return;
@@ -237,7 +241,7 @@ async function pollOnce(){
       stopRefresh("Fresh list loaded at "+fmtTime(new Date().toISOString())+" CT","ok");return;
     }
   }catch(e){}
-  if(Date.now()>pollUntil){stopRefresh("Sent. Suzie hasn't posted a new set yet. It will show here on its own, or reload any time.","ok");startIdle();return}
+  if(Date.now()>pollUntil){stopRefresh("List is current. "+lastLine(),"ok");startIdle();return}
   pollTimer=setTimeout(pollOnce,FAST);
 }
 function startRefresh(){
@@ -254,7 +258,8 @@ btn.addEventListener("click",async()=>{
   const checked=tickedIds(),unchecked=Object.keys(pending).filter(k=>pending[k]===false);
   try{
     const r=await fetch(API,{method:"POST",cache:"no-store",headers:{"x-brief-token":token,"content-type":"application/json"},
-      body:JSON.stringify({action:"submit",brief_date:data.date,checked_item_ids:checked,unchecked_item_ids:unchecked,note:note.value.trim()})});
+      body:JSON.stringify({action:"submit",brief_date:data.date,checked_item_ids:checked,unchecked_item_ids:unchecked,note:note.value.trim(),
+        checked_items:data.items.filter(i=>checked.includes(i.id)).map(i=>({id:i.id,label:i.label,section:i.section,detail:i.detail,item_key:i.item_key}))})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok) throw new Error(j.error||("HTTP "+r.status));
     pending={};unsynced={};note.value="";try{localStorage.removeItem(KEY);localStorage.removeItem(KEY2)}catch(e){}
